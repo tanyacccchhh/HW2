@@ -1,0 +1,269 @@
+---
+title: "Untitled"
+author: "Chudnovets Tatyana"
+date: "2023-11-09"
+output: html_document
+---
+
+```{r message = FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(plotly)
+library(rstatix)
+library(corrplot)
+library(ggpubr)
+library(GGally)
+library(factoextra)
+library(pheatmap)
+library(FactoMineR)
+library(ggbiplot)
+library(tidymodels)
+library(embed)
+library(stats)
+library(ggplot2)
+
+
+
+```
+#Задание 1
+```{r}
+
+data <- readRDS("life_expectancy_data.RDS")
+
+
+
+
+```
+
+
+
+#Задание 2
+
+```{r}
+# Создание интерактивного графика с использованием 'continent' для раскраски
+plot <- plot_ly(data, x = ~`Life expectancy`, y = ~Unemployment, color = ~continent, 
+                type = "scatter", mode = "markers", text = ~Gender, marker = list(size = 10)) %>%
+  layout(title = "Life Expectancy vs Unemployment",
+         xaxis = list(title = "Life Expectancy"),
+         yaxis = list(title = "Unemployment"),
+         showlegend = TRUE)
+
+# Отображение графика
+plot
+
+```
+#Задание 3
+```{r}
+
+
+
+filter_data <- subset(data, data$continent %in% c("Africa", "Americas"))
+
+# Тест Манна-Уитни
+stat.test <- filter_data %>%
+  wilcox_test(`Life expectancy` ~ continent)
+stat.test
+
+# Создание ящиков с усами
+p <- ggboxplot(
+  filter_data,
+  x = "continent", y = "Life expectancy"
+) +
+  labs(subtitle = get_test_label(stat.test, detailed = TRUE))
+
+# Визуализация результатов теста Манна-Уитни
+p + geom_signif(comparisons = list(c("Africa", "Americas")), 
+                map_signif_level = TRUE, 
+                textsize = 6, vjust = 0.5)
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+```
+#Задание 4
+```{r fig.height=10, fig.width=10, warning=FALSE}
+
+
+# Выбор числовых переменных и исключение Year
+data2 <- data %>% 
+  select_if(is.numeric) %>%
+  select(-Year)
+
+# Корреляционный анализ и построение корреляционного графика с corrplot
+cor_plot <- data2 %>%
+  select(everything()) %>%
+  psych::corr.test(adjust = "BH")
+
+corrplot(corr = cor_plot$r,
+         p.mat = cor_plot$p,
+         method = "color",
+         order = "hclust")
+
+
+
+
+
+```
+```{r fig.width=10, fig.height=10}
+# Визуализация корреляций с помощью ggpairs
+cor_plot2 <- ggpairs(data2,
+                     title = 'Correlations in dataset',
+                     progress = FALSE) +
+  theme_minimal() +
+  scale_fill_manual(values = c('#69b3a2')) +
+  scale_colour_manual(values = c('#69b3a2'))
+
+cor_plot2
+```
+#Задание 5
+```{r fig.width=15, fig.height=5}
+
+
+# Масштабирование данных
+data2_scaled <- scale(data2)
+
+# Расчет матрицы расстояний
+data2_dist <- dist(data2_scaled, method = "euclidean")
+
+# Иерархическая кластеризация
+data2_hc <- hclust(d = data2_dist, method = "ward.D2")
+
+# Визуализация дендрограммы
+fviz_dend(data2_hc, 
+          k = 5,  # количество кластеров
+          k_colors = c("#cc0337", "#010d85", "#37953f", "#f98866","#5BC7F2" ),
+          cex = 0.1,
+          rect = TRUE) +
+  guides(color = "none")
+
+
+
+
+```
+#Задание6
+```{r  fig.width=10, fig.height=10}
+
+
+pheatmap(data2_scaled, 
+         clustering_method = "ward.D2", 
+         cutree_rows = 5,
+         cutree_cols = length(colnames(data2_scaled)),
+         angle_col = 90, 
+         main = "Dendrograms for clustering rows and columns with heatmap")
+
+
+
+
+
+
+```
+#Задание 7
+```{r fig.width=5, fig.height=5}
+data_pca <- prcomp(data2_scaled) 
+summary(data_pca)
+
+```
+#Задание8
+```{r}
+
+plot_bi <- ggbiplot(
+  data_pca,
+  scale = 0,
+   groups = as.factor(data$continent),  
+  ellipse = TRUE,
+  alpha = 0.2,
+) + 
+  geom_point(
+    aes(
+      color = data$continent,
+      fill = data$Country
+    )
+  ) +
+  theme_minimal()
+
+plotly_1 <- ggplotly(plot_bi)
+
+# Вывести график
+plotly_1
+
+
+
+
+
+
+```
+
+
+#Задание10
+```{r}
+
+
+
+
+umap <- recipe(~., data = data2) %>% 
+  step_normalize(all_predictors()) %>% 
+  step_umap(all_predictors()) %>% 
+  prep() %>% 
+  juice() 
+umap2 <- cbind(umap, data)
+
+umap2 %>%
+  ggplot(aes(UMAP1, UMAP2)) + 
+  geom_point(aes(color = continent,
+             alpha = 0.7, size = 2)) +
+  labs(color = NULL)
+
+
+
+```
+#Задание 11
+```{r}
+
+# Удаление 5 случайных колонок
+set.seed(123)  # для воспроизводимости
+removed_columns <- sample(colnames(data2), 5)
+data_after_removal <- data2[, !(colnames(data2) %in% removed_columns)]
+
+# Функция для проведения PCA и получения кумулятивного процента объяснённой вариации
+perform_pca <- function(data) {
+  pca_result <- prcomp(data, scale. = TRUE)
+  cumulative_variance <- cumsum(pca_result$sdev^2) / sum(pca_result$sdev^2)
+  return(list(result = pca_result, cumulative_variance = cumulative_variance))
+}
+
+# Проведение PCA анализа три раза после удаления 5 случайных колонок
+pca_results <- lapply(1:3, function(i) {
+  set.seed(123 + i)  # изменение seed для различных итераций
+  removed_columns <- sample(colnames(data2), 5)
+  data_after_removal <- data2[, !(colnames(data2) %in% removed_columns)]
+  perform_pca(data_after_removal)
+})
+
+# Визуализация кумулятивного процента объяснённой вариации
+par(mfrow = c(1, 3))
+for (i in 1:3) {
+  plot(pca_results[[i]]$cumulative_variance, type = 'b', main = paste("PCA Run", i),
+       xlab = "Number of Principal Components", ylab = "Cumulative Variance Explained")
+}
+
+
+```
+
+
+
+
+
+
+
+
+
